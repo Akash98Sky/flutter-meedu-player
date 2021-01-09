@@ -221,7 +221,9 @@ class MeeduPlayerController {
       case FijkState.started:
         playerStatus.status.value = PlayerStatus.playing;
         break;
+      case FijkState.completed:
       case FijkState.stopped:
+      case FijkState.end:
         playerStatus.status.value = PlayerStatus.stopped;
         break;
       case FijkState.paused:
