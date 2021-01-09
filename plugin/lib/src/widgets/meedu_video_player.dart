@@ -3,13 +3,13 @@ import 'package:flutter_meedu/rx.dart';
 import 'package:meedu_player/meedu_player.dart';
 import 'package:meedu_player/src/controller.dart';
 import 'package:meedu_player/src/helpers/responsive.dart';
-import 'package:meedu_player/src/widgets/closed_caption_view.dart';
 import 'package:meedu_player/src/widgets/styles/primary/primary_player_controls.dart';
 import 'package:meedu_player/src/widgets/styles/secondary/secondary_player_controls.dart';
-import 'package:video_player/video_player.dart';
 
 class MeeduVideoPlayer extends StatefulWidget {
   final MeeduPlayerController controller;
+  final double aspectRatio;
+  final FijkFit fit;
 
   final Widget Function(
     BuildContext context,
@@ -30,10 +30,12 @@ class MeeduVideoPlayer extends StatefulWidget {
   MeeduVideoPlayer({
     Key key,
     @required this.controller,
+    this.aspectRatio = 16 / 9,
+    this.fit = FijkFit.contain,
     this.header,
     this.bottomRight,
     this.customIcons,
-  })  : assert(controller != null),
+  })  : assert(controller != null, aspectRatio != null),
         super(key: key);
 
   @override
@@ -75,23 +77,30 @@ class _MeeduVideoPlayerState extends State<MeeduVideoPlayer> {
         if (widget.bottomRight != null) {
           _.bottomRight = this.widget.bottomRight(context, _, responsive);
         }
-        return Stack(
-          alignment: Alignment.center,
-          children: [
-            AspectRatio(
-              aspectRatio: _.videoPlayerController.value.aspectRatio,
-              child: VideoPlayer(_.videoPlayerController),
-            ),
-            ClosedCaptionView(responsive: responsive),
-            if (_.controlsEnabled && _.controlsStyle == ControlsStyle.primary)
-              PrimaryVideoPlayerControls(
-                responsive: responsive,
-              ),
-            if (_.controlsEnabled && _.controlsStyle == ControlsStyle.secondary)
-              SecondaryVideoPlayerControls(
-                responsive: responsive,
-              ),
-          ],
+        return AspectRatio(
+          aspectRatio: widget.aspectRatio,
+          child: FijkView(
+            player: _.videoPlayerController,
+            fit: widget.fit ?? FijkFit.contain,
+            fsFit: widget.fit ?? FijkFit.contain,
+            panelBuilder: (player, data, context, viewSize, texturePos) {
+              return Stack(
+                alignment: Alignment.center,
+                children: [
+                  if (_.controlsEnabled &&
+                      _.controlsStyle == ControlsStyle.primary)
+                    PrimaryVideoPlayerControls(
+                      responsive: responsive,
+                    ),
+                  if (_.controlsEnabled &&
+                      _.controlsStyle == ControlsStyle.secondary)
+                    SecondaryVideoPlayerControls(
+                      responsive: responsive,
+                    ),
+                ],
+              );
+            },
+          ),
         );
       },
     );

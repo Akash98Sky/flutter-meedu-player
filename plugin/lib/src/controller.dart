@@ -1,24 +1,23 @@
 import 'dart:async';
+import 'package:fijkplayer/fijkplayer.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:meedu_player/meedu_player.dart' show MeeduPlayerProvider;
 import 'package:meedu_player/src/helpers/custom_icons.dart';
-import 'package:meedu_player/src/helpers/data_source.dart';
 import 'package:meedu_player/src/helpers/enabled_buttons.dart';
 import 'package:meedu_player/src/helpers/meedu_player_status.dart';
 import 'package:meedu_player/src/helpers/player_data_status.dart';
 import 'package:meedu_player/src/helpers/screen_manager.dart';
 import 'package:meedu_player/src/native/pip_manager.dart';
 import 'package:meedu_player/src/widgets/fullscreen_page.dart';
-import 'package:video_player/video_player.dart';
 import 'package:meedu/rx.dart';
 
 enum ControlsStyle { primary, secondary }
 
 class MeeduPlayerController {
   /// the video_player controller
-  VideoPlayerController _videoPlayerController;
+  final FijkPlayer _videoPlayerController = FijkPlayer();
   final _pipManager = PipManager();
 
   /// Screen Manager to define the overlays and device orientation when the player enters in fullscreen mode
@@ -52,7 +51,7 @@ class MeeduPlayerController {
   Rx<Duration> _position = Rx(Duration.zero);
   Rx<Duration> _sliderPosition = Rx(Duration.zero);
   Rx<Duration> _duration = Rx(Duration.zero);
-  Rx<List<DurationRange>> _buffered = Rx([]);
+  Rx<Duration> _buffered = Rx(Duration.zero);
   Rx<bool> _closedCaptionEnabled = false.obs;
 
   Rx<bool> _mute = false.obs;
@@ -106,11 +105,11 @@ class MeeduPlayerController {
   Stream<Duration> get onSliderPositionChanged => _sliderPosition.stream;
 
   /// [bufferedLoaded] buffered Loaded for network resources
-  Rx<List<DurationRange>> get buffered => _buffered;
-  Stream<List<DurationRange>> get onBufferedChanged => _buffered.stream;
+  Rx<Duration> get buffered => _buffered;
+  Stream<Duration> get onBufferedChanged => _buffered.stream;
 
   /// [videoPlayerController] instace of VideoPlayerController
-  VideoPlayerController get videoPlayerController => _videoPlayerController;
+  FijkPlayer get videoPlayerController => _videoPlayerController;
 
   /// the playback speed default value is 1.0
   double get playbackSpeed => _playbackSpeed;
@@ -179,35 +178,17 @@ class MeeduPlayerController {
     }
   }
 
-  /// create a new video_player controller
-  VideoPlayerController _createVideoController(DataSource dataSource) {
-    VideoPlayerController tmp; // create a new video controller
-    if (dataSource.type == DataSourceType.asset) {
-      tmp = new VideoPlayerController.asset(
-        dataSource.source,
-        closedCaptionFile: dataSource.closedCaptionFile,
-        package: dataSource.package,
-      );
-    } else if (dataSource.type == DataSourceType.network) {
-      tmp = new VideoPlayerController.network(
-        dataSource.source,
-        formatHint: dataSource.formatHint,
-        closedCaptionFile: dataSource.closedCaptionFile,
-      );
-    } else {
-      tmp = new VideoPlayerController.file(
-        dataSource.file,
-        closedCaptionFile: dataSource.closedCaptionFile,
-      );
-    }
-    return tmp;
-  }
-
   /// initialize the video_player controller and load the data source
-  Future _initializePlayer({
+  Future<void> _initializePlayer(
+    String dataSource, {
     Duration seekTo,
   }) async {
-    await _videoPlayerController.initialize();
+    if (_videoPlayerController.state != FijkState.idle)
+      await _videoPlayerController.reset();
+    await _videoPlayerController.setDataSource(
+      dataSource,
+      autoPlay: playerStatus.playing,
+    );
 
     if (seekTo != null) {
       await this.seekTo(seekTo);
@@ -229,41 +210,35 @@ class MeeduPlayerController {
   }
 
   void _listener() {
-    final value = _videoPlayerController.value;
-    // set the current video position
-    final position = value.position;
-    _position.value = position;
-    if (!_isSliderMoving) {
-      _sliderPosition.value = position;
-    }
-
-    // set the video buffered loaded
-    final buffered = value.buffered;
-
-    if (buffered.isNotEmpty) {
-      _buffered.value = buffered;
-      isBuffering.value =
-          value.isPlaying && position.inSeconds >= buffered.last.end.inSeconds;
-    }
-
     // save the volume value
-    final volume = value.volume;
-    if (!mute.value && _volumeBeforeMute != volume) {
-      _volumeBeforeMute = volume;
+    FijkVolume.getVol().then((volume) {
+      if (!mute.value && _volumeBeforeMute != volume)
+        _volumeBeforeMute = volume;
+    });
+
+    // check the player status
+    switch (_videoPlayerController.state) {
+      case FijkState.started:
+        playerStatus.status.value = PlayerStatus.playing;
+        break;
+      case FijkState.stopped:
+        playerStatus.status.value = PlayerStatus.stopped;
+        break;
+      case FijkState.paused:
+        playerStatus.status.value = PlayerStatus.paused;
+        break;
+      default:
     }
 
-    // check if the player has been finished
-    if (_position.value.inSeconds >= duration.value.inSeconds &&
-        !playerStatus.stopped) {
-      playerStatus.status.value = PlayerStatus.stopped;
-    }
+    // set the video duration
+    _duration.value = _videoPlayerController.value.duration;
   }
 
   /// set the video data source
   ///
   /// [autoPlay] if this is true the video automatically start
   Future<void> setDataSource(
-    DataSource dataSource, {
+    String dataSource, {
     bool autoplay,
     bool looping,
     Duration seekTo,
@@ -275,29 +250,33 @@ class MeeduPlayerController {
 
       // if we are playing a video
       if (_videoPlayerController != null &&
-          _videoPlayerController.value.isPlaying) {
+          _videoPlayerController.state == FijkState.started) {
         await this.pause(notify: false);
       }
 
       // save the current video controller to be disposed in the next frame
-      VideoPlayerController oldController = _videoPlayerController;
 
       // create a new video_player controller using the dataSource
-      _videoPlayerController = _createVideoController(dataSource);
-      await _initializePlayer(seekTo: seekTo);
-      if (oldController != null) {
-        WidgetsBinding.instance.addPostFrameCallback((_) async {
-          oldController?.removeListener(this._listener);
-          await oldController
-              ?.dispose(); // dispose the previous video controller
-        });
-      }
+      await _initializePlayer(dataSource, seekTo: seekTo);
 
       /// notify that video was loaded
       dataStatus.status.value = DataStatus.loaded;
 
-      // set the video duration
-      _duration.value = _videoPlayerController.value.duration;
+      _videoPlayerController.onCurrentPosUpdate.listen((position) {
+        // set the current video position
+        _position.value = position;
+        if (!_isSliderMoving) {
+          _sliderPosition.value = position;
+        }
+      });
+
+      _videoPlayerController.onBufferPosUpdate.listen((buffered) {
+        // set the video buffered loaded
+        if (buffered.inSeconds > 0) {
+          _buffered.value = buffered;
+          isBuffering.value = _videoPlayerController.isBuffering;
+        }
+      });
 
       // listen the video player events
       _videoPlayerController.addListener(this._listener);
@@ -305,7 +284,7 @@ class MeeduPlayerController {
       print(e);
       print(s);
       if (_errorText == null) {
-        _errorText = _videoPlayerController.value.errorDescription;
+        _errorText = 'Playback Error';
       }
       dataStatus.status.value = DataStatus.error;
     }
@@ -318,7 +297,7 @@ class MeeduPlayerController {
     if (repeat) {
       await seekTo(Duration.zero);
     }
-    await _videoPlayerController?.play();
+    await _videoPlayerController?.start();
     playerStatus.status.value = PlayerStatus.playing;
 
     _hideTaskControls();
@@ -334,9 +313,10 @@ class MeeduPlayerController {
 
   /// seek the current video position
   Future<void> seekTo(Duration position) async {
-    await _videoPlayerController?.seekTo(position);
+    if (_videoPlayerController.isPlayable())
+      await _videoPlayerController?.seekTo(position.inMilliseconds);
 
-    if (playerStatus.stopped) {
+    if (playerStatus.stopped || playerStatus.paused) {
       await play();
     }
   }
@@ -359,13 +339,13 @@ class MeeduPlayerController {
   ///   possible that your specific video cannot be slowed down, in which case
   ///   the plugin also reports errors.
   Future<void> setPlaybackSpeed(double speed) async {
-    await _videoPlayerController?.setPlaybackSpeed(speed);
+    await _videoPlayerController?.setSpeed(speed);
     _playbackSpeed = speed;
   }
 
   /// Sets whether or not the video should loop after playing once
   Future<void> setLooping(bool looping) async {
-    await _videoPlayerController?.setLooping(looping);
+    await _videoPlayerController?.setLoop(looping ? 0 : 1);
     _looping = looping;
   }
 
@@ -374,7 +354,7 @@ class MeeduPlayerController {
   /// linear scale.
   Future<void> setVolume(double volume) async {
     assert(volume >= 0.0 && volume <= 1.0); // validate the param
-    _volumeBeforeMute = _videoPlayerController.value.volume;
+    _volumeBeforeMute = await FijkVolume.getVol();
     await _videoPlayerController?.setVolume(volume);
   }
 
@@ -395,7 +375,7 @@ class MeeduPlayerController {
   /// [enabled] if is true the video player is muted
   Future<void> setMute(bool enabled) async {
     if (enabled) {
-      _volumeBeforeMute = _videoPlayerController.value.volume;
+      _volumeBeforeMute = await FijkVolume.getVol();
     }
     _mute.value = enabled;
     await this.setVolume(enabled ? 0 : _volumeBeforeMute);
@@ -459,7 +439,7 @@ class MeeduPlayerController {
   /// [looping]
   Future<void> launchAsFullscreen(
     BuildContext context, {
-    @required DataSource dataSource,
+    @required String dataSource,
     bool autoplay = false,
     bool looping = false,
     Widget header,
@@ -502,8 +482,7 @@ class MeeduPlayerController {
       dataStatus.status.close();
       _videoPlayerController?.removeListener(this._listener);
 
-      await _videoPlayerController?.dispose();
-      _videoPlayerController = null;
+      await _videoPlayerController?.release();
     }
   }
 

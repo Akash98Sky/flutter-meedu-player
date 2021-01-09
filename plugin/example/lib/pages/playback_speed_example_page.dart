@@ -2,6 +2,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:meedu_player/meedu_player.dart';
 
+import '../mock.dart';
+
 class PlayBackSpeedExamplePage extends StatefulWidget {
   PlayBackSpeedExamplePage({Key key}) : super(key: key);
 

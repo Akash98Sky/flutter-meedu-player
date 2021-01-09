@@ -19,8 +19,9 @@ class PlayerSlider extends StatelessWidget {
               builder: (__) {
                 // convert the bufferedLoaded to a percent using the video duration as a 100%
                 double percent = 0;
-                if (_.buffered.value.isNotEmpty) {
-                  final loaded = _.buffered.value.last.end;
+                if (_.buffered.value != null &&
+                    _.buffered.value.inSeconds > 0) {
+                  final loaded = _.buffered.value;
                   percent = loaded.inSeconds / _.duration.value.inSeconds;
                 }
                 // draw the  bufferedLoaded as a container

@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:meedu_player/meedu_player.dart';
 import 'package:wakelock/wakelock.dart';
 
+import '../mock.dart';
+
 class CustomIconsExamplePage extends StatefulWidget {
   CustomIconsExamplePage({Key key}) : super(key: key);
 
@@ -54,7 +56,8 @@ class _CustomIconsExamplePageState extends State<CustomIconsExamplePage> {
     _meeduPlayerController.setDataSource(
       DataSource(
         type: DataSourceType.network,
-        source: "https://www.radiantmediaplayer.com/media/big-buck-bunny-360p.mp4",
+        source:
+            "https://www.radiantmediaplayer.com/media/big-buck-bunny-360p.mp4",
       ),
       autoplay: true,
     );

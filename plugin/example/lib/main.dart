@@ -4,8 +4,6 @@ import 'package:player_example/pages/basic_example_page.dart';
 import 'package:player_example/pages/change_quality_example_page.dart';
 import 'package:player_example/pages/custom_icons_example.dart';
 import 'package:player_example/pages/disabled_buttons_example_page.dart';
-import 'package:player_example/pages/fullscreen_example_page.dart';
-import 'package:player_example/pages/network_with_subtitle_page.dart';
 import 'package:player_example/pages/one_page_to_other_page_example.dart';
 import 'package:player_example/pages/pick_file_page_example.dart';
 import 'package:player_example/pages/playback_speed_example_page.dart';
@@ -22,9 +20,7 @@ class MyApp extends StatelessWidget {
       home: HomePage(),
       routes: {
         "basic": (_) => BasicExamplePage(),
-        "fullscreen": (_) => FullscreenExamplePage(),
         "with-header": (_) => PlayerWithHeaderPage(),
-        "subtitles": (_) => NetworkWithSubtitlesPage(),
         "playback-speed": (_) => PlayBackSpeedExamplePage(),
         "quality-change": (_) => ChangeQualityExamplePage(),
         "one-page-to-other": (_) => OnePageExample(),

@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:meedu_player/meedu_player.dart';
 import 'package:wakelock/wakelock.dart';
 
+import '../mock.dart';
+
 class BasicExamplePage extends StatefulWidget {
   BasicExamplePage({Key key}) : super(key: key);
 

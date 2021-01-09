@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:meedu_player/meedu_player.dart';
 import 'package:wakelock/wakelock.dart';
 
+import '../mock.dart';
+
 class PlayerWithHeaderPage extends StatefulWidget {
   PlayerWithHeaderPage({Key key}) : super(key: key);
 
