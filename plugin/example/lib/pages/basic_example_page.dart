@@ -20,6 +20,7 @@ class _BasicExamplePageState extends State<BasicExamplePage> {
     controlsStyle: ControlsStyle.primary,
     pipEnabled: true, // enable  pip on android
     showPipButton: true, // use false to hide pip button in the player
+    screenManager: ScreenManager(forceLandScapeInFullscreen: true),
   );
 
   StreamSubscription _playerEventSubs;

@@ -10,6 +10,8 @@ class MeeduVideoPlayer extends StatefulWidget {
   final MeeduPlayerController controller;
   final double aspectRatio;
   final FijkFit fit;
+  final Color backgroundColor;
+  final ImageProvider<Object> cover;
 
   final Widget Function(
     BuildContext context,
@@ -32,6 +34,8 @@ class MeeduVideoPlayer extends StatefulWidget {
     @required this.controller,
     this.aspectRatio = 16 / 9,
     this.fit = FijkFit.contain,
+    this.backgroundColor = Colors.black,
+    this.cover,
     this.header,
     this.bottomRight,
     this.customIcons,
@@ -83,6 +87,8 @@ class _MeeduVideoPlayerState extends State<MeeduVideoPlayer> {
             player: _.videoPlayerController,
             fit: widget.fit ?? FijkFit.contain,
             fsFit: widget.fit ?? FijkFit.contain,
+            color: widget.backgroundColor,
+            cover: widget.cover,
             panelBuilder: (player, data, context, viewSize, texturePos) {
               return Stack(
                 alignment: Alignment.center,

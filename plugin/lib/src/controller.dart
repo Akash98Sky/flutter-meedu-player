@@ -229,6 +229,9 @@ class MeeduPlayerController {
       case FijkState.paused:
         playerStatus.status.value = PlayerStatus.paused;
         break;
+      case FijkState.prepared:
+        isBuffering.value = _videoPlayerController.isBuffering;
+        break;
       default:
     }
 
@@ -276,8 +279,12 @@ class MeeduPlayerController {
         // set the video buffered loaded
         if (buffered.inSeconds > 0) {
           _buffered.value = buffered;
-          isBuffering.value = _videoPlayerController.isBuffering;
         }
+      });
+
+      _videoPlayerController.onBufferStateUpdate.listen((_) {
+        // update the video buffering state
+        isBuffering.value = _videoPlayerController.isBuffering;
       });
 
       // listen the video player events
