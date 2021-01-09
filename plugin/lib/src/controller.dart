@@ -67,6 +67,8 @@ class MeeduPlayerController {
   double _playbackSpeed = 1.0;
   Timer _timer;
   RxWorker _pipModeWorker;
+  List<StreamSubscription> _oldSubscriptions = [];
+  Duration _scheduleSeekTo;
 
   // GETS
 
@@ -185,12 +187,14 @@ class MeeduPlayerController {
   }) async {
     if (_videoPlayerController.state != FijkState.idle)
       await _videoPlayerController.reset();
+
     await _videoPlayerController.setDataSource(
       dataSource,
-      autoPlay: playerStatus.playing,
+      autoPlay: _autoplay,
     );
+    await _videoPlayerController.prepareAsync();
 
-    if (seekTo != null) {
+    if (seekTo != null && seekTo != Duration.zero) {
       await this.seekTo(seekTo);
     }
 
@@ -202,11 +206,6 @@ class MeeduPlayerController {
     if (_looping) {
       await setLooping(_looping);
     }
-
-    if (_autoplay) {
-      // if the autoplay is enabled
-      await this.play();
-    }
   }
 
   void _listener() {
@@ -215,6 +214,10 @@ class MeeduPlayerController {
       if (!mute.value && _volumeBeforeMute != volume)
         _volumeBeforeMute = volume;
     });
+
+    // run scheduled seek when controller is in playable state
+    if (_videoPlayerController.isPlayable() && _scheduleSeekTo != null)
+      this.seekTo(_scheduleSeekTo);
 
     // check the player status
     switch (_videoPlayerController.state) {
@@ -228,9 +231,6 @@ class MeeduPlayerController {
         break;
       case FijkState.paused:
         playerStatus.status.value = PlayerStatus.paused;
-        break;
-      case FijkState.prepared:
-        isBuffering.value = _videoPlayerController.isBuffering;
         break;
       default:
     }
@@ -259,7 +259,13 @@ class MeeduPlayerController {
         await this.pause(notify: false);
       }
 
-      // save the current video controller to be disposed in the next frame
+      // Remove old listners and subscriptions
+      _videoPlayerController.removeListener(this._listener);
+      await Future.wait(_oldSubscriptions.map((sub) => sub.cancel()));
+      _oldSubscriptions.clear();
+
+      // set state to buffering
+      isBuffering.value = true;
 
       // create a new video_player controller using the dataSource
       await _initializePlayer(dataSource, seekTo: seekTo);
@@ -267,25 +273,43 @@ class MeeduPlayerController {
       /// notify that video was loaded
       dataStatus.status.value = DataStatus.loaded;
 
-      _videoPlayerController.onCurrentPosUpdate.listen((position) {
-        // set the current video position
-        _position.value = position;
-        if (!_isSliderMoving) {
-          _sliderPosition.value = position;
-        }
-      });
+      _oldSubscriptions.add(
+        _videoPlayerController.onCurrentPosUpdate.listen((position) {
+          // set the current video position
+          _position.value = position;
+          if (!_isSliderMoving) {
+            _sliderPosition.value = position;
+          }
+        }),
+      );
 
-      _videoPlayerController.onBufferPosUpdate.listen((buffered) {
-        // set the video buffered loaded
-        if (buffered.inSeconds > 0) {
-          _buffered.value = buffered;
-        }
-      });
+      _oldSubscriptions.add(
+        _videoPlayerController.onBufferPosUpdate.listen((buffered) {
+          // set the video buffered loaded
+          if (buffered.inSeconds > 0) {
+            _buffered.value = buffered;
+          }
+        }),
+      );
 
-      _videoPlayerController.onBufferStateUpdate.listen((_) {
-        // update the video buffering state
-        isBuffering.value = _videoPlayerController.isBuffering;
-      });
+      _oldSubscriptions.add(
+        _videoPlayerController.onBufferStateUpdate.listen((_) {
+          // update the video buffering state
+          switch (_videoPlayerController.state) {
+            case FijkState.started:
+              isBuffering.value = false;
+              break;
+            case FijkState.completed:
+              isBuffering.value = false;
+              break;
+            case FijkState.paused:
+              isBuffering.value = false;
+              break;
+            default:
+              isBuffering.value = _videoPlayerController.isBuffering;
+          }
+        }),
+      );
 
       // listen the video player events
       _videoPlayerController.addListener(this._listener);
@@ -322,12 +346,15 @@ class MeeduPlayerController {
 
   /// seek the current video position
   Future<void> seekTo(Duration position) async {
-    if (_videoPlayerController.isPlayable())
-      await _videoPlayerController?.seekTo(position.inMilliseconds);
+    final doPlay = _videoPlayerController.state == FijkState.started;
 
-    if (playerStatus.stopped || playerStatus.paused) {
-      await play();
-    }
+    if (_videoPlayerController.isPlayable()) {
+      _scheduleSeekTo = null;
+      await _videoPlayerController?.seekTo(position.inMilliseconds);
+    } else
+      _scheduleSeekTo = position;
+
+    if (doPlay) await play();
   }
 
   /// Sets the playback speed of [this].
@@ -475,6 +502,8 @@ class MeeduPlayerController {
   /// dispose de video_player controller
   Future<void> dispose() async {
     if (_videoPlayerController != null) {
+      _videoPlayerController?.removeListener(this._listener);
+      await Future.wait(_oldSubscriptions.map((sub) => sub.cancel()));
       _timer?.cancel();
       _position.close();
       _sliderPosition.close();
@@ -489,7 +518,6 @@ class MeeduPlayerController {
       _pipManager.dispose();
       playerStatus.status.close();
       dataStatus.status.close();
-      _videoPlayerController?.removeListener(this._listener);
 
       await _videoPlayerController?.release();
     }
