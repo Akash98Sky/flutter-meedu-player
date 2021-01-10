@@ -67,6 +67,8 @@ class MeeduPlayerController {
   double _playbackSpeed = 1.0;
   Timer _timer;
   RxWorker _pipModeWorker;
+  List<StreamSubscription> _oldSubscriptions = [];
+  Duration _scheduleSeekTo;
 
   // GETS
 
@@ -189,8 +191,9 @@ class MeeduPlayerController {
       dataSource,
       autoPlay: playerStatus.playing,
     );
+    await _videoPlayerController.prepareAsync();
 
-    if (seekTo != null) {
+    if (seekTo != null && seekTo != Duration.zero) {
       await this.seekTo(seekTo);
     }
 
@@ -215,6 +218,10 @@ class MeeduPlayerController {
       if (!mute.value && _volumeBeforeMute != volume)
         _volumeBeforeMute = volume;
     });
+
+    // run scheduled seek when controller is in playable state
+    if (_videoPlayerController.isPlayable() && _scheduleSeekTo != null)
+      this.seekTo(_scheduleSeekTo);
 
     // check the player status
     switch (_videoPlayerController.state) {
@@ -259,7 +266,13 @@ class MeeduPlayerController {
         await this.pause(notify: false);
       }
 
-      // save the current video controller to be disposed in the next frame
+      // Remove old listners and subscriptions
+      _videoPlayerController.removeListener(this._listener);
+      await Future.wait(_oldSubscriptions.map((sub) => sub.cancel()));
+      _oldSubscriptions.clear();
+
+      // set state to buffering
+      isBuffering.value = true;
 
       // create a new video_player controller using the dataSource
       await _initializePlayer(dataSource, seekTo: seekTo);
@@ -267,25 +280,31 @@ class MeeduPlayerController {
       /// notify that video was loaded
       dataStatus.status.value = DataStatus.loaded;
 
-      _videoPlayerController.onCurrentPosUpdate.listen((position) {
-        // set the current video position
-        _position.value = position;
-        if (!_isSliderMoving) {
-          _sliderPosition.value = position;
-        }
-      });
+      _oldSubscriptions.add(
+        _videoPlayerController.onCurrentPosUpdate.listen((position) {
+          // set the current video position
+          _position.value = position;
+          if (!_isSliderMoving) {
+            _sliderPosition.value = position;
+          }
+        }),
+      );
 
-      _videoPlayerController.onBufferPosUpdate.listen((buffered) {
-        // set the video buffered loaded
-        if (buffered.inSeconds > 0) {
-          _buffered.value = buffered;
-        }
-      });
+      _oldSubscriptions.add(
+        _videoPlayerController.onBufferPosUpdate.listen((buffered) {
+          // set the video buffered loaded
+          if (buffered.inSeconds > 0) {
+            _buffered.value = buffered;
+          }
+        }),
+      );
 
-      _videoPlayerController.onBufferStateUpdate.listen((_) {
-        // update the video buffering state
-        isBuffering.value = _videoPlayerController.isBuffering;
-      });
+      _oldSubscriptions.add(
+        _videoPlayerController.onBufferStateUpdate.listen((_) {
+          // update the video buffering state
+          isBuffering.value = _videoPlayerController.isBuffering;
+        }),
+      );
 
       // listen the video player events
       _videoPlayerController.addListener(this._listener);
@@ -322,8 +341,11 @@ class MeeduPlayerController {
 
   /// seek the current video position
   Future<void> seekTo(Duration position) async {
-    if (_videoPlayerController.isPlayable())
+    if (_videoPlayerController.isPlayable()) {
+      _scheduleSeekTo = null;
       await _videoPlayerController?.seekTo(position.inMilliseconds);
+    } else
+      _scheduleSeekTo = position;
 
     if (playerStatus.stopped || playerStatus.paused) {
       await play();
