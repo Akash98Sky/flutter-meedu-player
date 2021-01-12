@@ -17,7 +17,7 @@ enum ControlsStyle { primary, secondary }
 
 class MeeduPlayerController {
   /// the video_player controller
-  final FijkPlayer _videoPlayerController = FijkPlayer();
+  FijkPlayer _videoPlayerController;
   final _pipManager = PipManager();
 
   /// Screen Manager to define the overlays and device orientation when the player enters in fullscreen mode
@@ -159,7 +159,10 @@ class MeeduPlayerController {
     this.showPipButton = false,
     this.customIcons = const CustomIcons(),
     this.enabledButtons = const EnabledButtons(),
+    FijkLogLevel logLevel = FijkLogLevel.Info,
   }) {
+    FijkLog.setLevel(logLevel);
+    _videoPlayerController = FijkPlayer();
     _errorText = errorText;
     this.tag = DateTime.now().microsecondsSinceEpoch.toString();
     this.loadingWidget = loadingWidget ??
@@ -220,7 +223,7 @@ class MeeduPlayerController {
     });
 
     // run scheduled seek when controller is in playable state
-    if (_videoPlayerController.isPlayable() && _scheduleSeekTo != null)
+    if (_scheduleSeekTo != null && _videoPlayerController.isPlayable())
       this.seekTo(_scheduleSeekTo);
 
     // check the player status
@@ -237,7 +240,8 @@ class MeeduPlayerController {
         playerStatus.status.value = PlayerStatus.paused;
         break;
       case FijkState.prepared:
-        isBuffering.value = _videoPlayerController.isBuffering;
+        // reset buffering state when new source has prepared
+        isBuffering.value = false;
         break;
       default:
     }
@@ -261,8 +265,7 @@ class MeeduPlayerController {
       dataStatus.status.value = DataStatus.loading;
 
       // if we are playing a video
-      if (_videoPlayerController != null &&
-          _videoPlayerController.state == FijkState.started) {
+      if (_videoPlayerController.state == FijkState.started) {
         await this.pause(notify: false);
       }
 
@@ -280,7 +283,7 @@ class MeeduPlayerController {
       /// notify that video was loaded
       dataStatus.status.value = DataStatus.loaded;
 
-      _oldSubscriptions.add(
+      _oldSubscriptions.addAll([
         _videoPlayerController.onCurrentPosUpdate.listen((position) {
           // set the current video position
           _position.value = position;
@@ -288,23 +291,16 @@ class MeeduPlayerController {
             _sliderPosition.value = position;
           }
         }),
-      );
-
-      _oldSubscriptions.add(
         _videoPlayerController.onBufferPosUpdate.listen((buffered) {
           // set the video buffered loaded
-          if (buffered.inSeconds > 0) {
-            _buffered.value = buffered;
-          }
+          if (buffered.inSeconds > 0) _buffered.value = buffered;
         }),
-      );
-
-      _oldSubscriptions.add(
         _videoPlayerController.onBufferStateUpdate.listen((_) {
           // update the video buffering state
-          isBuffering.value = _videoPlayerController.isBuffering;
+          if (_buffered.value.inSeconds > 0)
+            isBuffering.value = _videoPlayerController.isBuffering;
         }),
-      );
+      ]);
 
       // listen the video player events
       _videoPlayerController.addListener(this._listener);
@@ -497,6 +493,7 @@ class MeeduPlayerController {
   /// dispose de video_player controller
   Future<void> dispose() async {
     if (_videoPlayerController != null) {
+      await Future.wait(_oldSubscriptions.map((sub) => sub.cancel()));
       _timer?.cancel();
       _position.close();
       _sliderPosition.close();
